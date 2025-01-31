@@ -14,6 +14,7 @@ use mcp_core::tool::Tool;
 
 pub const OPENROUTER_DEFAULT_MODEL: &str = "anthropic/claude-3.5-sonnet";
 pub const OPENROUTER_MODEL_PREFIX_ANTHROPIC: &str = "anthropic";
+pub const OPENROUTER_MODEL_PREFIX_DEEPSEEK: &str = "deepseek-r1";
 
 // OpenRouter can run many models, we suggest the default
 pub const OPENROUTER_KNOWN_MODELS: &[&str] = &[OPENROUTER_DEFAULT_MODEL];
@@ -132,6 +133,63 @@ fn update_request_for_anthropic(original_payload: &Value) -> Value {
     payload
 }
 
+fn update_request_for_deepseek(original_payload: &Value) -> Value {
+    let mut payload = original_payload.clone();
+
+    if let Some(messages_spec) = payload
+        .as_object_mut()
+        .and_then(|obj| obj.get_mut("messages"))
+        .and_then(|messages| messages.as_array_mut())
+    {
+        // Add "cache_control" to the last and second-to-last "user" messages
+        let mut user_count = 0;
+        for message in messages_spec.iter_mut().rev() {
+            if message.get("role") == Some(&json!("user")) {
+                if let Some(content) = message.get_mut("content") {
+                    if let Some(content_str) = content.as_str() {
+                        *content = json!([{
+                            "type": "text",
+                            "text": content_str,
+                            "cache_control": { "type": "ephemeral" }
+                        }]);
+                    }
+                }
+                user_count += 1;
+                if user_count >= 2 {
+                    break;
+                }
+            }
+        }
+
+        // Update the system message to have cache_control field
+        if let Some(system_message) = messages_spec
+            .iter_mut()
+            .find(|msg| msg.get("role") == Some(&json!("system")))
+        {
+            if let Some(content) = system_message.get_mut("content") {
+                if let Some(content_str) = content.as_str() {
+                    *system_message = json!({
+                        "role": "system",
+                        "content": [{
+                            "type": "text",
+                            "text": content_str,
+                            "cache_control": { "type": "ephemeral" }
+                        }]
+                    });
+                }
+            }
+        }
+    }
+
+    // Remove any tools/function calling capabilities
+    if let Some(obj) = payload.as_object_mut() {
+        obj.remove("tools");
+        obj.remove("tool_choice");
+    }
+
+    payload
+}
+
 fn create_request_based_on_model(
     model_config: &ModelConfig,
     system: &str,
@@ -146,11 +204,20 @@ fn create_request_based_on_model(
         &super::utils::ImageFormat::OpenAi,
     )?;
 
+    // Check for Anthropic models
     if model_config
         .model_name
         .starts_with(OPENROUTER_MODEL_PREFIX_ANTHROPIC)
     {
         payload = update_request_for_anthropic(&payload);
+    }
+    
+    // Check for DeepSeek models
+    if model_config
+        .model_name
+        .contains(OPENROUTER_MODEL_PREFIX_DEEPSEEK)
+    {
+        payload = update_request_for_deepseek(&payload);
     }
 
     Ok(payload)
