@@ -75,6 +75,23 @@ impl OpenRouterProvider {
 
         handle_response_openai_compat(response).await
     }
+
+    // Extract tools from system message if it contains a tools section
+    fn extract_tools_from_system(system: &str) -> Option<Vec<Tool>> {
+        if let Some(tools_start) = system.find("<functions>") {
+            if let Some(tools_end) = system.find("</functions>") {
+                let tools_text = &system[tools_start..=tools_end + 11]; // +11 to include "</functions>"
+                match serde_json::from_str::<Vec<Tool>>(tools_text) {
+                    Ok(tools) => return Some(tools),
+                    Err(e) => {
+                        tracing::warn!("Failed to parse tools from system message: {}", e);
+                        return None;
+                    }
+                }
+            }
+        }
+        None
+    }
 }
 
 /// Update the request when using anthropic model.
@@ -136,6 +153,9 @@ fn update_request_for_anthropic(original_payload: &Value) -> Value {
 fn update_request_for_deepseek(original_payload: &Value) -> Value {
     let mut payload = original_payload.clone();
 
+    // Extract tools before removing them from the payload
+    let tools = payload.get("tools").cloned();
+
     if let Some(messages_spec) = payload
         .as_object_mut()
         .and_then(|obj| obj.get_mut("messages"))
@@ -161,18 +181,31 @@ fn update_request_for_deepseek(original_payload: &Value) -> Value {
             }
         }
 
-        // Update the system message to have cache_control field
+        // Update the system message to include tools and have cache_control field
         if let Some(system_message) = messages_spec
             .iter_mut()
             .find(|msg| msg.get("role") == Some(&json!("system")))
         {
             if let Some(content) = system_message.get_mut("content") {
                 if let Some(content_str) = content.as_str() {
+                    let system_content = if let Some(tools) = tools {
+                        // Format tools as a string
+                        let tools_str = serde_json::to_string_pretty(&tools)
+                            .unwrap_or_else(|_| "[]".to_string());
+                        format!(
+                            "{}\n\nYou have access to the following tools:\n<functions>\n{}\n</functions>\n\nTo use a tool, respond with a message containing an XML-like function call block like this:\n<function_calls>\n<invoke name=\"tool_name\">\n<parameter name=\"param_name\">value</parameter>\n</invoke>\n</function_calls>",
+                            content_str,
+                            tools_str
+                        )
+                    } else {
+                        content_str.to_string()
+                    };
+
                     *system_message = json!({
                         "role": "system",
                         "content": [{
                             "type": "text",
-                            "text": content_str,
+                            "text": system_content,
                             "cache_control": { "type": "ephemeral" }
                         }]
                     });
@@ -181,7 +214,7 @@ fn update_request_for_deepseek(original_payload: &Value) -> Value {
         }
     }
 
-    // Remove any tools/function calling capabilities
+    // Remove any tools/function calling capabilities from the request
     if let Some(obj) = payload.as_object_mut() {
         obj.remove("tools");
         obj.remove("tool_choice");
@@ -262,14 +295,25 @@ impl Provider for OpenRouterProvider {
         messages: &[Message],
         tools: &[Tool],
     ) -> Result<(Message, ProviderUsage), ProviderError> {
+        // Try to extract tools from system message if available
+        let effective_tools = if let Some(system_tools) = Self::extract_tools_from_system(system) {
+            system_tools
+        } else {
+            tools.to_vec()
+        };
+
         // Create the base payload
-        let payload = create_request_based_on_model(&self.model, system, messages, tools)?;
+        let payload = create_request_based_on_model(&self.model, system, messages, &effective_tools)?;
 
         // Make request
         let response = self.post(payload.clone()).await?;
 
         // Parse response
         let message = response_to_message(response.clone())?;
+        
+        // Debug log the response structure
+        tracing::debug!("OpenRouter response: {}", serde_json::to_string_pretty(&response).unwrap_or_default());
+        
         let usage = match get_usage(&response) {
             Ok(usage) => usage,
             Err(ProviderError::UsageError(e)) => {
