@@ -1,13 +1,10 @@
-import { getActiveProviders, isSecretKey } from '../components/settings/api_keys/utils';
 import { getApiUrl, getSecretKey } from '../config';
 import { required_keys } from '../components/settings/models/hardcoded_stuff';
-import { useActiveKeys } from '../components/settings/api_keys/ActiveKeysContext';
 
 export async function DeleteProviderKeysFromKeychain() {
   for (const [provider, keys] of Object.entries(required_keys)) {
     for (const keyName of keys) {
       try {
-        const isSecret = true; // get rid of keychain keys only
         const deleteResponse = await fetch(getApiUrl('/configs/delete'), {
           method: 'DELETE',
           headers: {
@@ -16,7 +13,7 @@ export async function DeleteProviderKeysFromKeychain() {
           },
           body: JSON.stringify({
             key: keyName,
-            isSecret,
+            is_secret: true, // get rid of keychain keys only
           }),
         });
 
