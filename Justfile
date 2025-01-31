@@ -46,7 +46,6 @@ langfuse-server:
     #!/usr/bin/env bash
     ./scripts/setup_langfuse.sh
 
-
 # validate the version is semver, and not the current version
 validate version:
     #!/usr/bin/env bash
