@@ -244,7 +244,7 @@ fn create_request_based_on_model(
     {
         payload = update_request_for_anthropic(&payload);
     }
-    
+
     // Check for DeepSeek models
     if model_config
         .model_name
@@ -303,17 +303,21 @@ impl Provider for OpenRouterProvider {
         };
 
         // Create the base payload
-        let payload = create_request_based_on_model(&self.model, system, messages, &effective_tools)?;
+        let payload =
+            create_request_based_on_model(&self.model, system, messages, &effective_tools)?;
 
         // Make request
         let response = self.post(payload.clone()).await?;
 
         // Parse response
         let message = response_to_message(response.clone())?;
-        
+
         // Debug log the response structure
-        tracing::debug!("OpenRouter response: {}", serde_json::to_string_pretty(&response).unwrap_or_default());
-        
+        println!(
+            "OpenRouter response: {}",
+            serde_json::to_string_pretty(&response).unwrap_or_default()
+        );
+
         let usage = match get_usage(&response) {
             Ok(usage) => usage,
             Err(ProviderError::UsageError(e)) => {
