@@ -1,5 +1,9 @@
 # Justfile
 
+# list all tasks
+default:
+  @just --list
+
 # Default release command
 release-binary:
     @echo "Building release version..."
@@ -59,6 +63,7 @@ validate version:
       exit 1
     fi
 
+# set cargo and app versions, must be semver
 release version:
     @just validate {{ version }} || exit 1
 
@@ -75,6 +80,7 @@ release version:
 get-tag-version:
     @uvx --from=toml-cli toml get --toml-path=Cargo.toml "workspace.package.version"
 
+# create the git tag from Cargo.toml, must be on main
 tag:
     #!/usr/bin/env bash
     branch=$(git rev-parse --abbrev-ref HEAD); \
@@ -89,6 +95,7 @@ tag-push: tag
     # this will kick of ci for release
     git push origin tag v$(just get-tag-version)
 
+# generate release notes from git commits
 release-notes:
     #!/usr/bin/env bash
     git log --pretty=format:"- %s" v$(just get-tag-version)..HEAD
