@@ -46,6 +46,15 @@ langfuse-server:
     #!/usr/bin/env bash
     ./scripts/setup_langfuse.sh
 
+# ensure the current branch is "main" or error
+ensure-main:
+    #!/usr/bin/env bash
+    branch=$(git rev-parse --abbrev-ref HEAD); \
+    if [ "$branch" != "main" ]; then \
+        echo "Error: You are not on the main branch (current: $branch)"; \
+        exit 1; \
+    fi
+
 # validate the version is semver, and not the current version
 validate version:
     #!/usr/bin/env bash
@@ -63,7 +72,7 @@ validate version:
     fi
 
 # set cargo and app versions, must be semver
-release version:
+release version: ensure-main
     @just validate {{ version }} || exit 1
 
     @git switch -c "release/{{ version }}"
@@ -71,7 +80,6 @@ release version:
 
     @cd ui/desktop && npm version {{ version }} --no-git-tag-version --allow-same-version
 
-    # TODO: Cargo.lock?
     @git add Cargo.toml ui/desktop/package.json ui/desktop/package-lock.json
     @git commit --message "chore(release): release version {{ version }}"
 
@@ -80,19 +88,13 @@ get-tag-version:
     @uvx --from=toml-cli toml get --toml-path=Cargo.toml "workspace.package.version"
 
 # create the git tag from Cargo.toml, must be on main
-tag:
-    #!/usr/bin/env bash
-    branch=$(git rev-parse --abbrev-ref HEAD); \
-    if [ "$branch" != "main" ]; then \
-        echo "Error: You are not on the main branch (current: $branch)"; \
-        exit 1; \
-    fi
-    git tag v$(just get-tag-version)
+tag: ensure-main
+    echo git tag v$(just get-tag-version)
 
 # create tag and push to origin (use this when release branch is merged to main)
 tag-push: tag
     # this will kick of ci for release
-    git push origin tag v$(just get-tag-version)
+    echo git push origin tag v$(just get-tag-version)
 
 # generate release notes from git commits
 release-notes:
