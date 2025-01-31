@@ -94,7 +94,9 @@ export function ChatContent({
     onToolCall: ({ toolCall }) => {
       updateWorking(Working.Working);
       setProgressMessage(`Executing tool: ${toolCall.toolName}`);
-      requestAnimationFrame(() => scrollToBottom('instant'));
+      if (isNearBottom()) {
+        requestAnimationFrame(() => scrollToBottom('instant'));
+      }
     },
     onResponse: (response) => {
       if (!response.ok) {
@@ -115,7 +117,9 @@ export function ChatContent({
       const fetchResponses = await askAi(message.content);
       setMessageMetadata((prev) => ({ ...prev, [message.id]: fetchResponses }));
 
-      requestAnimationFrame(() => scrollToBottom('smooth'));
+      if (isNearBottom()) {
+        requestAnimationFrame(() => scrollToBottom('smooth'));
+      }
 
       const timeSinceLastInteraction = Date.now() - lastInteractionTime;
       window.electron.logInfo('last interaction:' + lastInteractionTime);
@@ -150,13 +154,27 @@ export function ChatContent({
     }
   }, [messages]);
 
+  const isNearBottom = () => {
+    const scrollArea = document.getElementById('chat-scroll-area');
+    if (!scrollArea) return true;
+
+    const threshold = 100; // pixels from bottom to consider "at bottom"
+    const scrollPosition = scrollArea.scrollTop + scrollArea.clientHeight;
+    const scrollHeight = scrollArea.scrollHeight;
+
+    return scrollHeight - scrollPosition <= threshold;
+  };
+
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
     if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({
-        behavior,
-        block: 'end',
-        inline: 'nearest',
-      });
+      // Only scroll if we're near the bottom
+      if (isNearBottom()) {
+        messagesEndRef.current.scrollIntoView({
+          behavior,
+          block: 'end',
+          inline: 'nearest',
+        });
+      }
     }
   };
 
@@ -178,7 +196,9 @@ export function ChatContent({
         role: 'user',
         content: content,
       });
-      scrollToBottom('instant');
+      if (isNearBottom()) {
+        scrollToBottom('instant');
+      }
     }
   };
 
